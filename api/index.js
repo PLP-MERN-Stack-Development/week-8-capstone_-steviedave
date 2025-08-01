@@ -1,164 +1,199 @@
-//importing express into our api
 const express = require('express');
 const cors = require('cors');
 const app = express();
 const User = require('./models/User');
 const bcrypt = require('bcryptjs');
-const Post =require('./models/Post');
+const Post = require('./models/Post');
 const mongoose = require("mongoose");
-const e = require('express');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const multer = require('multer');
-const uploadMiddleware = multer({ dest: 'uploads/'});
 const fs = require('fs');
-const dotenv = require('dotenv').config();
+const path = require('path');
+require('dotenv').config();
 
+// Middleware for file uploads
+const uploadMiddleware = multer({ dest: 'uploads/' });
 
-const salt = bcrypt.genSaltSync(10); //encryption key
+const salt = bcrypt.genSaltSync(10);
 const PORT = process.env.PORT || 4000;
-const secret = process.env.JWT_SECRET;;
+const secret = process.env.JWT_SECRET;
 
-//const MONGO_URI = require('./env');
-
+// Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected successfully'))
-  .catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB connection error:', err));
 
+// CORS Setup
+const allowedOrigins = [
+  'http://localhost:3000',
+  process.env.CLIENT_URL, // should be set to your deployed frontend
+];
 
-  const allowedOrigins = [
-    'http://localhost:3000',
-    'https://techies-blog-7pji.onrender.com'
-  ];
-  
-  app.use(cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-  }));
-  
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error(`❌ CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 
-//mongoose.connect(MONGO_URI)
+app.use(express.json());
+app.use(cookieParser());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.post('/register', async(req,res) => {
-  const {username, password} = req.body;
+// ------------------- Routes -------------------
+
+// Register
+app.post('/register', async (req, res) => {
   try {
+    const { username, password } = req.body;
     const userDoc = await User.create({
-      username, 
-      password:bcrypt.hashSync(password,salt),
-    })
+      username,
+      password: bcrypt.hashSync(password, salt),
+    });
     res.json(userDoc);
   } catch (error) {
-    res.status(400).json(e) 
+    console.error("❌ Registration error:", error);
+    res.status(500).json({ error: 'Registration failed' });
   }
 });
 
-app.post('/login', async(req,res) => {
-  const {username,password} = req.body;
-  const userDoc = await User.findOne({username});
-  if (!userDoc) return res.status(400).json('user not found');
-  const passOk = bcrypt.compareSync(password, userDoc.password);
-  if (passOk) {
-    //logged in
-    jwt.sign({username, id:userDoc._id}, secret, {}, (err, token) => {
+// Login
+app.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const userDoc = await User.findOne({ username });
+    if (!userDoc) return res.status(400).json('User not found');
+
+    const passOk = bcrypt.compareSync(password, userDoc.password);
+    if (!passOk) return res.status(400).json('Wrong credentials');
+
+    jwt.sign({ username, id: userDoc._id }, secret, {}, (err, token) => {
       if (err) throw err;
-      res.cookie('token', token).json({
-        id:userDoc._id,
-        username,
-      });
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+      }).json({ id: userDoc._id, username });
     });
-  }
-  else {
-    res.status(400).json('wrong credentials');
+  } catch (error) {
+    console.error("❌ Login error:", error);
+    res.status(500).json({ error: 'Login failed' });
   }
 });
 
-app.get('/profile', (req,res) => {
-  const {token} = req.cookies;
-  jwt.verify(token, secret, {}, (err,info) => {
-    if (err) throw err;
+// Profile
+app.get('/profile', (req, res) => {
+  const { token } = req.cookies;
+  if (!token) return res.status(401).json({ error: 'No token provided' });
+
+  jwt.verify(token, secret, {}, (err, info) => {
+    if (err) {
+      console.error("❌ Token verification error:", err);
+      return res.status(403).json({ error: 'Invalid token' });
+    }
     res.json(info);
-  })
-  res.json(req.cookies);
-});
-
-app.post('/logout', (req,res) => {
-  res.cookie('token', '').json('Logged out successfully');
-})
-
-app.post('/post', uploadMiddleware.single('file'), async (req,res) => {
- // res.json({files:req.file});
-  const {originalname, path} = req.file;
-  const parts =originalname.split('.');
-  const ext = parts[parts.length - 1];
-  const newPath = path+'.'+ext;
-  fs.renameSync(path, newPath);
-
-  const {token} = req.cookies;
-  jwt.verify(token, secret, {}, async (err,info) => {
-    if (err) throw err;
-    const {title,summary,content} = req.body;
-  const postDoc = await Post.create({
-    title,
-    summary,
-    content,
-    cover:newPath,
-    author:info.id,
-   });
-   res.json({postDoc});
   });
 });
 
+// Logout
+app.post('/logout', (req, res) => {
+  res.cookie('token', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+  }).json('Logged out successfully');
+});
 
-app.get('/post', async (req,res) => {
-  res.json(await Post.find()
-  .populate('author', ['username'])
-  .sort({createdAt: -1})
-  .limit(20)
-);
-})
+// Create Post
+app.post('/post', uploadMiddleware.single('file'), async (req, res) => {
+  try {
+    const { originalname, path: tempPath } = req.file;
+    const ext = path.extname(originalname);
+    const newPath = tempPath + ext;
+    fs.renameSync(tempPath, newPath);
 
+    const { token } = req.cookies;
+    jwt.verify(token, secret, {}, async (err, info) => {
+      if (err) throw err;
+      const { title, summary, content } = req.body;
+
+      const postDoc = await Post.create({
+        title,
+        summary,
+        content,
+        cover: newPath,
+        author: info.id,
+      });
+      res.json({ postDoc });
+    });
+  } catch (err) {
+    console.error("❌ Post creation error:", err);
+    res.status(500).json({ error: 'Post creation failed' });
+  }
+});
+
+// Get all posts
+app.get('/post', async (req, res) => {
+  try {
+    const posts = await Post.find()
+      .populate('author', ['username'])
+      .sort({ createdAt: -1 })
+      .limit(20);
+    res.json(posts);
+  } catch (err) {
+    console.error("❌ Fetch posts error:", err);
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+// Update Post
 app.put('/post', uploadMiddleware.single('file'), async (req, res) => {
   let newPath = null;
   if (req.file) {
-    const {originalname, path} = req.file;
-    const parts =originalname.split('.');
-    const ext = parts[parts.length - 1];
-    newPath = path+'.'+ext;
-  fs.renameSync(path, newPath);
+    const { originalname, path: tempPath } = req.file;
+    const ext = path.extname(originalname);
+    newPath = tempPath + ext;
+    fs.renameSync(tempPath, newPath);
   }
 
-  const {token} = req.cookies;
-  jwt.verify(token, secret, {}, async (err,info) => {
-    if (err) throw err;
-    const {id,title,summary,content} = req.body;
+  const { token } = req.cookies;
+  jwt.verify(token, secret, {}, async (err, info) => {
+    if (err) return res.status(403).json({ error: 'Invalid token' });
+
+    const { id, title, summary, content } = req.body;
     const postDoc = await Post.findById(id);
     const isAuthor = JSON.stringify(postDoc.author) === JSON.stringify(info.id);
-    if (!isAuthor) {
-      return res.status(400).json('you are not the author');
-    }
-    
+    if (!isAuthor) return res.status(403).json('You are not the author');
+
     await postDoc.updateOne({
-      title, 
-      summary, 
+      title,
+      summary,
       content,
       cover: newPath ? newPath : postDoc.cover,
     });
     res.json(postDoc);
   });
-
 });
 
-app.get('/post/:id', async (req,res) => {
-  const {id} = req.params;
-  const postDoc = await Post.findById(id).populate('author', ['username']);
-  res.json(postDoc);
-})
+// Get single post
+app.get('/post/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const postDoc = await Post.findById(id).populate('author', ['username']);
+    res.json(postDoc);
+  } catch (err) {
+    console.error("❌ Fetch post error:", err);
+    res.status(500).json({ error: 'Failed to fetch post' });
+  }
+});
 
-// app listens on port 4000
-app.listen(PORT);
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
