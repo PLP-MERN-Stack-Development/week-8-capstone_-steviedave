@@ -1,6 +1,7 @@
 # backend ignores
 api/node_modules
 api/.env
+api/uploads
 
 #frontend ignores
 client/node_modules
