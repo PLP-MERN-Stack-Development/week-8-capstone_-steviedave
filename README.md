@@ -18,6 +18,15 @@ With a simple yet elegant interface, the application provides seamless navigatio
 
 ---
 
+## Deployment
+
+Techie's blog has been deployed using render in the following link; 
+
+https://techies-blog-7pji.onrender.com/
+
+You can navigate to the link, register and login and try creating a post and testing other features of the application.
+
+---
 
 ## 🚀 Features at a Glance
 
@@ -96,18 +105,6 @@ With a simple yet elegant interface, the application provides seamless navigatio
 ![API](./screenshots/api.png)
 
 ---
-
-
-## Deployment
-
-Techie's blog has been deployed using render in the following link; 
-
-https://techies-blog-7pji.onrender.com/
-
-You can navigate to the link, register and login and try creating a post and testing other features of the application.
-
----
-
 
 ## 📦 Installation & Setup Guide
 
