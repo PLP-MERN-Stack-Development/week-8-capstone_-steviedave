@@ -27,17 +27,21 @@ mongoose.connect(process.env.MONGO_URI)
 
 
   const allowedOrigins = [
-    process.env.CLIENT_URL,
+    'http://localhost:3000',
     'https://techies-blog-7pji.onrender.com'
   ];
-
-app.use(cors({
+  
+  app.use(cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
-    origin: allowedOrigins,
   }));
-app.use(express.json());
-app.use(cookieParser());
-app.use('/uploads', express.static(__dirname + '/uploads'));
+  
 
 //mongoose.connect(MONGO_URI)
 
